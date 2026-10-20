@@ -1,0 +1,41 @@
+PortableTune actual-C runtime regression, version=100
+PASS 01 default configuration and reset
+PASS 02 invalid configuration rejects start safely
+PASS 03 NaN configuration is rejected
+PASS 04 null-pointer API guards
+  known PI waveform with integer actuator: state=4 reason=ok cycles=4 stored=3 Kp=1.273239 Ki=0.127324 Kd=0 Ku=6.366198 Pu=10 A=2 h=10
+PASS 05 PI extraction uses measured actuator span and seconds
+PASS 06 interlock revokes a previously obtained candidate
+  known optional PID waveform: state=4 reason=ok cycles=4 stored=3 Kp=2.864789 Ki=0.5729578 Kd=3.580986 Ku=6.366198 Pu=10 A=2 h=10
+PASS 07 optional PID coefficients use continuous-time Ki/Kd
+PASS 08 cancel revokes candidate and returns zero output
+  FOPDT heater: ambient21 K1 tau80 deadtime10: state=4 reason=ok cycles=6 stored=4 Kp=1.638023 Ki=0.03276047 Kd=0 Ku=8.190117 Pu=50 A=1.24368 h=8
+  simulated seconds=808.0 input range=[21,101.25]
+PASS 09 default settling and real first-order-plus-deadtime heater
+PASS 10 cancel an active experiment
+PASS 11 NaN measurement stops safely
+PASS 12 NaN applied output stops safely
+PASS 13 sensor silence detected by tick
+PASS 14 interlock cancels active experiment
+PASS 15 unapplied actuator command after grace is rejected
+PASS 16 missing initial actuator confirmation expires independently
+PASS 17 actuator confirmation inside grace clears pending command
+PASS 18 measurement at upper safety limit is rejected
+PASS 19 settling timeout with fresh samples
+PASS 20 slow drift cannot satisfy the settling window
+PASS 21 no threshold crossing triggers half-cycle timeout
+PASS 22 total experiment timeout with fresh samples
+  insufficient oscillation amplitude: state=5 reason=oscillation not usable cycles=9 stored=3 Kp=0 Ki=0 Kd=0 Ku=0 Pu=0 A=0 h=0
+PASS 23 insufficient oscillation fails without invented gains
+PASS 24 excessive peak-to-peak amplitude is rejected
+PASS 25 oscillation outside configured period range is rejected
+PASS 26 candidate outside configured gain range is rejected
+PASS 27 reversed millisecond clock stops safely
+PASS 28 natural 32-bit clock rollover preserves full experiment
+  independent instance A: state=4 reason=ok cycles=4 stored=3 Kp=1.273239 Ki=0.127324 Kd=0 Ku=6.366198 Pu=10 A=2 h=10
+  independent instance B: state=4 reason=ok cycles=4 stored=3 Kp=1.061032 Ki=0.08841936 Kd=0 Ku=5.305161 Pu=12 A=1.2 h=5
+PASS 29 two interleaved instances keep independent states and results
+RESULT total=29 passed=29 failed=0
+Validation tests: 13 passed, 0 failed
+Integration tests: 16 passed, 0 failed
+全部真实C运行测试通过。

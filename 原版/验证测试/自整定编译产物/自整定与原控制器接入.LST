@@ -1,0 +1,211 @@
+C51 COMPILER V9.60.7.0   ____________________                                              10/20/2026 10:31:44 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE ____________________
+OBJECT MODULE PLACED IN 自整定与原控制器接入.OBJ
+COMPILER INVOKED BY: E:\Install\kill\C51\BIN\C51.exe 自整定与原控制器接入.c LARGE
+
+line level    source
+
+   1          /* 工程接入示例，不可不经改配置就连接现场执行器。
+   2           * 此.c独立持有全部实现；若移入main.c，把下列实现宏也移入同一编译单元。
+   3           * 所有返回功率均必须由项目统一写到真实硬件；停热不走PID限速。
+   4           */
+   5          #define PORTABLE_PID_IMPLEMENTATION
+   6          #include "../通用比例积分微分.h"
+   7          #define PORTABLE_TUNE_IMPLEMENTATION
+   8          #include "../通用自整定.h"
+   9          #define PORTABLE_TUNE_VALIDATION_IMPLEMENTATION
+  10          #include "../通用自整定验收.h"
+  11          
+  12          #if defined(__C51__)
+  13          #define EXAMPLE_RAM xdata
+  14          #else
+              #define EXAMPLE_RAM
+              #endif
+  17          
+  18          #define EXAMPLE_OFF 0
+  19          #define EXAMPLE_TUNING 1
+  20          #define EXAMPLE_WAITING 2
+  21          #define EXAMPLE_TRIAL 3
+  22          #define EXAMPLE_ACCEPTED 4
+  23          
+  24          static PortableTune EXAMPLE_RAM example_tune;
+  25          static PortableTuneConfig EXAMPLE_RAM example_tune_cfg;
+  26          static PortableTuneValidation EXAMPLE_RAM example_validation;
+  27          static PortableTuneValidationConfig EXAMPLE_RAM example_validation_cfg;
+  28          static PortablePid EXAMPLE_RAM example_pid;
+  29          static PortablePidConfig EXAMPLE_RAM example_pid_cfg;
+  30          static PortablePidConfig EXAMPLE_RAM example_saved_cfg;
+  31          static PortableTuneResult EXAMPLE_RAM example_candidate;
+  32          static unsigned char example_mode=EXAMPLE_OFF;
+  33          static unsigned long example_previous_ms=0UL;
+  34          static float example_target=100.0f;
+  35          void example_cancel(void);
+  36          
+  37          void example_init(void)
+  38          {
+  39   1          portable_tune_reset(&example_tune);
+  40   1          portable_pid_reset(&example_pid);
+  41   1          example_pid_cfg=portable_pid_heater_config();
+  42   1          example_saved_cfg=example_pid_cfg;
+  43   1          example_validation.state=PORTABLE_VALIDATION_IDLE;
+  44   1          example_mode=EXAMPLE_OFF;
+  45   1      }
+  46          
+  47          /* 外部先用已有控制器/人工控制接近工作点，测出近稳态维持功率。
+  48           * bias必须随新设备/目标/负载重新确定；不能固定使用79%。
+  49           */
+  50          int example_start_tune(float target,float bias,float measured,
+  51              unsigned long now_ms,unsigned char permit)
+  52          {
+  53   1          if(!permit) {example_cancel(); return 0;}
+  54   1          if(example_mode==EXAMPLE_TUNING||example_mode==EXAMPLE_TRIAL) return 0;
+  55   1          example_saved_cfg=example_pid_cfg;
+C51 COMPILER V9.60.7.0   ____________________                                              10/20/2026 10:31:44 PAGE 2   
+
+  56   1          portable_tune_defaults(&example_tune_cfg);
+  57   1          example_tune_cfg.target=target; example_tune_cfg.bias=bias;
+  58   1          if(!portable_pid_finite(measured)||measured<=example_tune_cfg.input_min
+  59   1             ||measured>=example_tune_cfg.input_max) return 0;
+  60   1          /* 在此针对项目配置继电幅度、温度边界、噪声门槛和全部时间限值。
+  61   1           * 默认PI：td_factor=0。试验PID时可设0.125，结果仍须重新验证。
+  62   1           */
+  63   1          if(!portable_tune_start(&example_tune,&example_tune_cfg,now_ms)) {
+  64   2              example_mode=EXAMPLE_OFF; return 0;
+  65   2          }
+  66   1          example_target=target; example_mode=EXAMPLE_TUNING;
+  67   1          return 1; /* 立即把example_tune.output下发，随后持续调用tick和新样本入口。 */
+  68   1      }
+  69          
+  70          /* 由操作界面明确请求试跑候选；不会在取得候选后自动修改在用参数。 */
+  71          int example_begin_trial(float measured,float actual_output,unsigned long now_ms,
+  72              unsigned char permit)
+  73          {
+  74   1          float err, i_term;
+  75   1          if(!permit) {example_cancel(); return 0;}
+  76   1          if(example_mode!=EXAMPLE_WAITING
+  77   1             ||!portable_tune_get_result(&example_tune,&example_candidate)
+  78   1             ||!portable_pid_finite(measured)||!portable_pid_finite(actual_output)
+  79   1             ||measured<=example_tune_cfg.input_min||measured>=example_tune_cfg.input_max
+  80   1             ||actual_output<0.0f||actual_output>example_pid_cfg.output_max) return 0;
+  81   1          example_pid_cfg.kp=example_candidate.kp;
+  82   1          example_pid_cfg.ki=example_candidate.ki;
+  83   1          example_pid_cfg.kd=example_candidate.kd;
+  84   1          if(!portable_pid_config_valid(&example_pid_cfg)) {
+  85   2              example_pid_cfg=example_saved_cfg; return 0;
+  86   2          }
+  87   1          portable_pid_reset(&example_pid);
+  88   1          err=example_target-measured;
+  89   1          if(err<example_pid_cfg.p_deadband&&err>-example_pid_cfg.p_deadband) err=0.0f;
+  90   1          i_term=actual_output-example_pid_cfg.kp*err;
+  91   1          if(i_term<0.0f) i_term=0.0f;
+  92   1          if(i_term>example_pid_cfg.output_max) i_term=example_pid_cfg.output_max;
+  93   1          example_pid.integral=i_term/example_pid_cfg.ki;
+  94   1          example_pid.output=actual_output; example_pid.last_out=actual_output;
+  95   1          example_pid.last_temp=measured; example_pid.have_temp=1;
+  96   1          example_previous_ms=now_ms&0xFFFFFFFFUL;
+  97   1          example_validation_cfg.target=example_target;
+  98   1          example_validation_cfg.tolerance=0.5f;
+  99   1          example_validation_cfg.minimum_inside_fraction=1.0f;
+ 100   1          example_validation_cfg.maximum_peak_to_peak=1.0f;
+ 101   1          example_validation_cfg.maximum_mean_error=0.5f;
+ 102   1          example_validation_cfg.maximum_overshoot=2.0f;
+ 103   1          example_validation_cfg.warmup_ms=1500000UL; /* 示例：热透25分钟 */
+ 104   1          example_validation_cfg.window_ms=300000UL; /* 再验收5分钟 */
+ 105   1          example_validation_cfg.max_gap_ms=(unsigned long)(example_pid_cfg.max_dt*1000.0f);
+ 106   1          if(!portable_validation_start(&example_validation,&example_validation_cfg,now_ms)) {
+ 107   2              example_pid_cfg=example_saved_cfg; example_mode=EXAMPLE_OFF; return 0;
+ 108   2          }
+ 109   1          example_mode=EXAMPLE_TRIAL;
+ 110   1          return 1;
+ 111   1      }
+ 112          
+ 113          void example_cancel(void)
+ 114          {
+ 115   1          portable_tune_cancel(&example_tune);
+ 116   1          example_pid_cfg=example_saved_cfg;
+ 117   1          portable_pid_reset(&example_pid); example_mode=EXAMPLE_OFF;
+C51 COMPILER V9.60.7.0   ____________________                                              10/20/2026 10:31:44 PAGE 3   
+
+ 118   1          /* 项目必须同时立即把执行器写0。这里只复位算法内存。 */
+ 119   1      }
+ 120          
+ 121          /* 主循环周期维护：即使没有新温度也要调用，返回值统一下发。
+ 122           * permit应包含：探头有效、超温允许、通信正常、现场安全联锁等。
+ 123           * 也必须在项目里设置持续工作的最终硬件/通信看门狗。
+ 124           */
+ 125          float example_tick(unsigned long now_ms,unsigned char permit)
+ 126          {
+ 127   1          if(!permit) {example_cancel(); return 0.0f;}
+ 128   1          if(example_mode==EXAMPLE_TUNING) {
+ 129   2              portable_tune_tick(&example_tune,now_ms,permit);
+ 130   2              if(!portable_tune_active(&example_tune)) example_mode=EXAMPLE_OFF;
+ 131   2              return example_tune.output;
+ 132   2          }
+ 133   1          if(example_mode==EXAMPLE_TRIAL||example_mode==EXAMPLE_ACCEPTED) {
+ 134   2              if(((now_ms-example_previous_ms)&0xFFFFFFFFUL)
+ 135   2                 >(unsigned long)(example_pid_cfg.max_dt*1000.0f)) {
+ 136   3                  example_cancel(); return 0.0f;
+ 137   3              }
+ 138   2              if(example_mode==EXAMPLE_TRIAL) {
+ 139   3                  portable_validation_tick(&example_validation,now_ms,permit);
+ 140   3                  if(example_validation.state==PORTABLE_VALIDATION_FAIL) {
+ 141   4                      example_cancel(); return 0.0f;
+ 142   4                  }
+ 143   3              }
+ 144   2              return example_pid.output;
+ 145   2          }
+ 146   1          return 0.0f;
+ 147   1      }
+ 148          
+ 149          /* 只在确认到达新的有效帧时调用；applied是此前已经施加的功率回读。 */
+ 150          float example_on_new_sample(float measured,float applied,unsigned long now_ms,
+ 151              unsigned char permit)
+ 152          {
+ 153   1          unsigned long elapsed;
+ 154   1          if(!permit) {example_cancel(); return 0.0f;}
+ 155   1          if(example_mode==EXAMPLE_TUNING) {
+ 156   2              portable_tune_update(&example_tune,measured,applied,now_ms,permit);
+ 157   2              if(example_tune.state==PORTABLE_TUNE_CANDIDATE) example_mode=EXAMPLE_WAITING;
+ 158   2              else if(!portable_tune_active(&example_tune)) example_mode=EXAMPLE_OFF;
+ 159   2              return example_tune.output;
+ 160   2          }
+ 161   1          if(example_mode!=EXAMPLE_TRIAL&&example_mode!=EXAMPLE_ACCEPTED) return 0.0f;
+ 162   1          elapsed=(now_ms-example_previous_ms)&0xFFFFFFFFUL;
+ 163   1          if(elapsed==0UL) return example_pid.output;
+ 164   1          if(elapsed>(unsigned long)(example_pid_cfg.max_dt*1000.0f)) {
+ 165   2              example_cancel(); return 0.0f;
+ 166   2          }
+ 167   1          if(elapsed<(unsigned long)(example_pid_cfg.min_dt*1000.0f))
+ 168   1              return example_pid.output;
+ 169   1          example_previous_ms=now_ms&0xFFFFFFFFUL;
+ 170   1          if(example_mode==EXAMPLE_TRIAL) {
+ 171   2              portable_validation_update(&example_validation,measured,now_ms,permit);
+ 172   2              if(example_validation.state==PORTABLE_VALIDATION_FAIL) {
+ 173   3                  example_cancel(); return 0.0f;
+ 174   3              }
+ 175   2              if(example_validation.state==PORTABLE_VALIDATION_PASS)
+ 176   2                  example_mode=EXAMPLE_ACCEPTED; /* 仅代表当前验收配置下的试跑通过 */
+ 177   2          }
+ 178   1          if(!portable_pid_step(&example_pid,&example_pid_cfg,example_target,measured,
+ 179   1                               (float)elapsed/1000.0f)) {example_cancel(); return 0.0f;}
+C51 COMPILER V9.60.7.0   ____________________                                              10/20/2026 10:31:44 PAGE 4   
+
+ 180   1          return example_pid.output;
+ 181   1      }
+ 182          /* Flash持久化由项目在EXAMPLE_ACCEPTED后独立实现；本示例不写Flash。 */
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =  19046    ----
+   CONSTANT SIZE    =    251    ----
+   XDATA SIZE       =    814     393
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

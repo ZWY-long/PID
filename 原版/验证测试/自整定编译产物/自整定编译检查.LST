@@ -1,0 +1,41 @@
+C51 COMPILER V9.60.7.0   ______________                                                    10/20/2026 10:31:44 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE ______________
+OBJECT MODULE PLACED IN 自整定编译检查.OBJ
+COMPILER INVOKED BY: E:\Install\kill\C51\BIN\C51.exe 自整定编译检查.c LARGE
+
+line level    source
+
+   1          #define PORTABLE_TUNE_IMPLEMENTATION
+   2          #include "../通用自整定.h"
+   3          #define PORTABLE_TUNE_VALIDATION_IMPLEMENTATION
+   4          #include "../通用自整定验收.h"
+   5          #if defined(__C51__)
+   6          #define TEST_RAM xdata
+   7          #else
+              #define TEST_RAM
+              #endif
+  10          static PortableTune TEST_RAM tuner;
+  11          static PortableTuneConfig TEST_RAM cfg;
+  12          void main(void) {
+  13   1          portable_tune_reset(&tuner);
+  14   1          portable_tune_defaults(&cfg);
+  15   1          portable_tune_start(&tuner,&cfg,0UL);
+  16   1          portable_tune_update(&tuner,100.0f,79.0f,0UL,1);
+  17   1          portable_tune_cancel(&tuner);
+  18   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =  13911    ----
+   CONSTANT SIZE    =    251    ----
+   XDATA SIZE       =    511     228
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
